@@ -32,6 +32,18 @@ function Sidebar() {
             <FaHistory className="me-2" /> Historial
           </Link>
         </li>
+        <li className="nav-item">
+          <span
+            className="nav-link text-danger"
+            style={{ cursor: 'pointer' }}
+            onClick={() => {
+              localStorage.removeItem("usuarioActual");
+              window.location.href = "/login"; // fuerza redirección
+            }}
+          >
+            🔒 Cerrar sesión
+          </span>
+        </li>
       </ul>
 
       <div className="mt-auto text-center">
