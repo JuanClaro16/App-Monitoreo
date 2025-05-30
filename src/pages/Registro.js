@@ -1,27 +1,35 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'react-toastify';
 
 const Registro = () => {
   const [nombres, setNombres] = useState('');
   const [apellidos, setApellidos] = useState('');
   const [telefono, setTelefono] = useState('');
-  const [usuario, setUsuario] = useState('');
+  const [correo, setCorreo] = useState('');
   const [contrasena, setContrasena] = useState('');
   const navigate = useNavigate();
 
   const handleRegistro = (e) => {
     e.preventDefault();
-    const usuarios = JSON.parse(localStorage.getItem('usuarios')) || [];
 
-    if (usuarios.find(u => u.usuario === usuario)) {
-      alert('El usuario ya existe');
+    // Validación de correo electrónico básica
+    const correoValido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo);
+    if (!correoValido) {
+      toast.error("Correo electrónico no válido");
       return;
     }
 
-    usuarios.push({ usuario, contrasena, nombres, apellidos, telefono });
-    localStorage.setItem('usuarios', JSON.stringify(usuarios));
-    alert('Usuario registrado exitosamente');
+    const usuarios = JSON.parse(localStorage.getItem('usuarios')) || [];
 
+    if (usuarios.find(u => u.correo === correo)) {
+      toast.error('Ya existe un registro con este correo');
+      return;
+    }
+
+    usuarios.push({ correo, contrasena, nombres, apellidos, telefono });
+    localStorage.setItem('usuarios', JSON.stringify(usuarios));
+    toast.success('Usuario registrado exitosamente');
     navigate('/login');
   };
 
@@ -39,11 +47,25 @@ const Registro = () => {
         </div>
         <div className="mb-3">
           <label>Teléfono</label>
-          <input className="form-control" type="tel" value={telefono} onChange={(e) => setTelefono(e.target.value)} required />
+          <input
+            className="form-control"
+            type="tel"
+            pattern="[0-9]*"
+            inputMode="numeric"
+            value={telefono}
+            onChange={(e) => setTelefono(e.target.value.replace(/\D/g, ''))}
+            required
+          />
         </div>
         <div className="mb-3">
-          <label>Usuario</label>
-          <input className="form-control" value={usuario} onChange={(e) => setUsuario(e.target.value)} required />
+          <label>Correo electrónico</label>
+          <input
+            className="form-control"
+            type="email"
+            value={correo}
+            onChange={(e) => setCorreo(e.target.value)}
+            required
+          />
         </div>
         <div className="mb-3">
           <label>Contraseña</label>

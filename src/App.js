@@ -7,14 +7,25 @@ import Alerts from './pages/Alerts';
 import Login from './pages/Login';
 import Registro from './pages/Registro';
 import Sidebar from './components/Sidebar';
+import { ToastContainer, toast } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
+
 
 function App() {
-  const[usuarioActual, setUsuarioActual] = useState(null);
-
+  const [usuarioActual, setUsuarioActual] = useState(undefined); // 👈 importante usar undefined
   useEffect(() => {
-    const user = JSON.parse(localStorage.getItem("usuarioActual"));
-    setUsuarioActual(user);
+    const user = JSON.parse(localStorage.getItem('usuarioActual'));
+    setUsuarioActual(user || null);
+    const loginFlag = localStorage.getItem("loginSuccess");
+    if (loginFlag) {
+      toast.success("Inicio de sesión exitoso");
+      localStorage.removeItem("loginSuccess");
+    }
   }, []);
+
+  if (usuarioActual === undefined) {
+    return null; // 👈 no renderiza nada hasta saber si hay usuario
+  }
 
   return (
     <Router>
@@ -63,6 +74,7 @@ function App() {
           <Route path="*" element={<Navigate to="/login" />} />
         )}
       </Routes>
+      <ToastContainer position="top-right" autoClose={3000} />
     </Router>
   );
 }
