@@ -13,7 +13,7 @@ body {
   display: flex;
   flex-direction: column;
   align-items: start;
-  border-right: 2px solid #00509E; 
+  border-right: 2px solid #00509E;
 }
 
 .sidebar .nav-link {
@@ -22,6 +22,7 @@ body {
   border-radius: 8px;
   transition: background-color 0.3s ease;
 }
+
 
 .sidebar .nav-link:hover,
 .sidebar .nav-link.active {
@@ -39,6 +40,9 @@ body {
   transition: color 0.3s ease;
 }
 
+h2 {
+  margin-bottom: 30px;
+}
 .sidebar h2 {
   font-size: 1.5rem;
   font-weight: bold;
@@ -68,12 +72,14 @@ body {
 }
 
 .sidebar ul li a:hover {
-  background-color: #00509E; /* Azul más claro al pasar el mouse */
+  background-color: #00509E;
+  /* Azul más claro al pasar el mouse */
   color: #fff;
 }
 
 .sidebar ul li a svg {
-  margin-right: 10px; /* Espaciado para los íconos */
+  margin-right: 10px;
+  /* Espaciado para los íconos */
   font-size: 18px;
 }
 
@@ -93,6 +99,10 @@ body {
 
 .nav-link:hover {
   background: rgba(0, 123, 255, 0.1);
+}
+
+.container {
+  max-width: 1200px;
 }
 
 .container-fluid {
@@ -119,15 +129,68 @@ body {
   border-radius: 8px;
   font-weight: bold;
 }
+
 .nav-tabs .nav-link {
   border: none;
   color: #0d6efd;
   transition: all 0.3s ease;
 }
+
 .nav-tabs .nav-link:hover {
   background-color: rgba(13, 110, 253, 0.1);
   border-radius: 8px;
 }
+
 .card {
   border-radius: 15px !important;
+  background: #f9f9f9;
+  transition: 0.3s;
+}
+
+.card:hover {
+  box-shadow: 0px 3px 10px rgba(0,0,0,0.2);
+}
+
+.btn-primary:hover {
+  background-color: #0056b3;
+}
+
+.btn-outline-secondary:hover {
+  background-color: #f0f0f0;
+}
+
+button {
+  transition: all 0.3s ease;
+}
+
+button:hover {
+  opacity: 0.9;
+}
+
+.position-absolute {
+  transition: all 0.3s ease;
+}
+
+.position-absolute:hover {
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+}
+
+.table {
+  margin-top: 30px;
+  background-color: #fff;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.table th {
+  background-color: #f1f1f1;
+}
+
+.table td, .table th {
+  text-align: center;
+  vertical-align: middle;
+}
+
+.barChart {
+  margin-bottom: 40px;
 }
