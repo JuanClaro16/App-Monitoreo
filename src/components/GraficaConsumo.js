@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import {
   LineChart,
   Line,
@@ -9,22 +9,42 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-const datosSimulados = [
-  { hora: "01:00", consumo: 1.5 },
-  { hora: "03:00", consumo: 1.2 },
-  { hora: "05:00", consumo: 2.0 },
-  { hora: "07:00", consumo: 3.2 },
-  { hora: "09:00", consumo: 4.1 },
-  { hora: "11:00", consumo: 4.5 },
-];
-
 const GraficaConsumo = () => {
-    // En el futuro, reemplaza "datosSimulados" por el dato que venga del sensor.
+  const [datos, setDatos] = useState([]);
+
+  const obtenerDato = async () => {
+    try {
+      const res = await fetch("http://localhost:8080/data/device?uuid=1");
+      const json = await res.json();
+
+      const ultimos = json.filter(d => d.values && d.values.power !== undefined);
+      if (ultimos.length > 0) {
+        const ultimo = ultimos[ultimos.length - 1];
+        const potencia = parseFloat(ultimo.values.power.toFixed(2));
+        const hora = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+        const nuevoPunto = { hora, consumo: potencia };
+        setDatos(prev => {
+          const actualizado = [...prev, nuevoPunto];
+          return actualizado.slice(-15); // Solo los últimos 15 puntos
+        });
+      }
+    } catch (err) {
+      console.error("Error obteniendo dato de consumo:", err);
+    }
+  };
+
+  useEffect(() => {
+    obtenerDato();
+    const intervalo = setInterval(obtenerDato, 5000);
+    return () => clearInterval(intervalo);
+  }, []);
+
   return (
     <div style={{ width: "100%", height: 300 }}>
       <h5 className="mb-4">Consumo en Tiempo Real</h5>
       <ResponsiveContainer>
-        <LineChart data={datosSimulados}>
+        <LineChart data={datos}>
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="hora" />
           <YAxis />
@@ -35,7 +55,7 @@ const GraficaConsumo = () => {
             stroke="#007bff"
             strokeWidth={2}
             activeDot={{ r: 6 }}
-            name="Consumo (kW)"
+            name="Consumo (W)"
           />
         </LineChart>
       </ResponsiveContainer>
