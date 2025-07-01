@@ -2,23 +2,25 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 
+import { getAuth, signInWithEmailAndPassword } from "firebase/auth";
+import { app } from "../firebase";
+
 const Login = () => {
   const [correo, setCorreo] = useState('');
   const [contrasena, setContrasena] = useState('');
   const navigate = useNavigate();
 
-  const handleLogin = (e) => {
+  const auth = getAuth(app);
+
+  const handleLogin = async (e) => {
     e.preventDefault();
 
-    const usuariosGuardados = JSON.parse(localStorage.getItem("usuarios")) || [];
-    const usuarioEncontrado = usuariosGuardados.find(
-      (u) => u.correo === correo && u.contrasena === contrasena
-    );
-
-    if (usuarioEncontrado) {
-      localStorage.setItem("usuarioActual", JSON.stringify(usuarioEncontrado));
+    try {
+      await signInWithEmailAndPassword(auth, correo, contrasena);
+      toast.success("Inicio de sesión exitoso");
       window.location.replace("/");
-    } else {
+    } catch (error) {
+      console.error("Error al iniciar sesión:", error);
       toast.error("Correo o contraseña incorrectos");
     }
   };

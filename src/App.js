@@ -13,6 +13,8 @@ import SimuladorMedicion from './pages/SimuladorMedicion';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
+import { getAuth, onAuthStateChanged } from 'firebase/auth';
+
 function AppWrapper() {
   return (
     <Router>
@@ -25,19 +27,16 @@ function App() {
   const [usuarioActual, setUsuarioActual] = useState(undefined);
 
   useEffect(() => {
-    const user = JSON.parse(localStorage.getItem('usuarioActual'));
-    setUsuarioActual(user || null);
-    const loginFlag = localStorage.getItem("loginSuccess");
-    if (loginFlag) {
-      localStorage.removeItem("loginSuccess");
-    }
+    const auth = getAuth();
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setUsuarioActual(user);
+    });
+    return () => unsubscribe();
   }, []);
 
   if (usuarioActual === undefined) {
-    return null; // Mientras carga
+    return null; // Mientras se valida el usuario
   }
-
-
 
   return (
     <>
@@ -86,5 +85,3 @@ function PrivateRoute({ children }) {
 }
 
 export default AppWrapper;
-
-

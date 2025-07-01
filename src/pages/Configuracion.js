@@ -1,40 +1,72 @@
 import React, { useState, useEffect } from "react";
 import { toast } from "react-toastify";
+import { getAuth } from "firebase/auth";
+import { getFirestore, doc, getDoc, updateDoc } from "firebase/firestore";
+import { app } from "../firebase";
 
 const electrodomesticosPorDefecto = [
     { nombre: "Nevera", consumo: 20 },
     { nombre: "Lavadora", consumo: 15 },
     { nombre: "Televisor", consumo: 5 },
     { nombre: "Aire Acondicionado", consumo: 50 },
-    { nombre: "Microondas", consumo: 10 }
+    { nombre: "Microondas", consumo: 10 },
 ];
 
 const Configuracion = () => {
     const [consumoMensual, setConsumoMensual] = useState("");
     const [electrodomesticos, setElectrodomesticos] = useState([]);
 
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    // Leer configuración desde Firebase al iniciar
     useEffect(() => {
-        const configGuardada = localStorage.getItem("configuracionConsumo");
-        if (configGuardada) {
-            const parsed = JSON.parse(configGuardada);
-            // Agregamos el nuevo campo si no existe (para actualizar los registros antiguos)
-            const actualizados = parsed.electrodomesticos.map(e => ({
-                ...e,
-                consumoReal: e.consumoReal ?? null
-            }));
-            setConsumoMensual(parsed.consumoMensual);
-            setElectrodomesticos(actualizados);
-        } else {
-            setElectrodomesticos(
-                electrodomesticosPorDefecto.map(e => ({
-                    nombre: e.nombre,
-                    consumo: e.consumo,
-                    cantidad: 1,
-                    activo: false,
-                    consumoReal: null
-                }))
-            );
-        }
+        const cargarConfiguracion = async () => {
+            const user = auth.currentUser;
+            if (!user) {
+                toast.error("Usuario no autenticado");
+                return;
+            }
+
+            try {
+                const ref = doc(db, "usuarios", user.uid);
+                const docSnap = await getDoc(ref);
+
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    setConsumoMensual(data.consumoMensual || "");
+                    const base = electrodomesticosPorDefecto.map(e => ({
+                        ...e,
+                        cantidad: 1,
+                        activo: false
+                    }));
+
+                    // activar los que están en Firestore
+                    const activos = data.dispositivos || [];
+                    const completos = base.map(e => {
+                        const encontrado = activos.find(d => d.nombre === e.nombre);
+                        return encontrado
+                            ? { ...e, activo: true, cantidad: encontrado.cantidad }
+                            : e;
+                    });
+
+                    setElectrodomesticos(completos);
+                } else {
+                    setElectrodomesticos(
+                        electrodomesticosPorDefecto.map(e => ({
+                            ...e,
+                            cantidad: 1,
+                            activo: false
+                        }))
+                    );
+                }
+            } catch (err) {
+                console.error("Error cargando configuración:", err);
+                toast.error("No se pudo cargar la configuración");
+            }
+        };
+
+        cargarConfiguracion();
     }, []);
 
     const actualizarEstado = (index, campo, valor) => {
@@ -43,19 +75,37 @@ const Configuracion = () => {
         setElectrodomesticos(actualizados);
     };
 
-    const guardarConfiguracion = () => {
+    const guardarConfiguracion = async () => {
         if (!consumoMensual || consumoMensual <= 0) {
             toast.error("Por favor ingresa el consumo mensual reportado");
             return;
         }
 
-        const configuracion = {
-            consumoMensual: parseInt(consumoMensual),
-            electrodomesticos: electrodomesticos
-        };
+        const user = auth.currentUser;
+        if (!user) {
+            toast.error("Usuario no autenticado");
+            return;
+        }
 
-        localStorage.setItem("configuracionConsumo", JSON.stringify(configuracion));
-        toast.success("Configuración guardada exitosamente");
+        const dispositivosSeleccionados = electrodomesticos
+            .filter(e => e.activo)
+            .map(e => ({
+                nombre: e.nombre,
+                consumoTeorico: e.consumo,
+                cantidad: e.cantidad
+            }));
+
+        try {
+            await updateDoc(doc(db, "usuarios", user.uid), {
+                consumoMensual: parseInt(consumoMensual),
+                dispositivos: dispositivosSeleccionados
+            });
+
+            toast.success("Configuración guardada exitosamente");
+        } catch (error) {
+            console.error("Error al guardar:", error);
+            toast.error("Error al guardar la configuración");
+        }
     };
 
     return (

@@ -2,6 +2,10 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 
+import { getAuth, createUserWithEmailAndPassword } from "firebase/auth";
+import { getFirestore, doc, setDoc } from "firebase/firestore";
+import { app } from "../firebase";
+
 const Registro = () => {
   const [nombres, setNombres] = useState('');
   const [apellidos, setApellidos] = useState('');
@@ -10,7 +14,10 @@ const Registro = () => {
   const [contrasena, setContrasena] = useState('');
   const navigate = useNavigate();
 
-  const handleRegistro = (e) => {
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+
+  const handleRegistro = async (e) => {
     e.preventDefault();
 
     const correoValido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo);
@@ -19,16 +26,25 @@ const Registro = () => {
       return;
     }
 
-    const usuarios = JSON.parse(localStorage.getItem('usuarios')) || [];
-    if (usuarios.find(u => u.correo === correo)) {
-      toast.error('Ya existe un registro con este correo');
-      return;
-    }
+    try {
+      const credenciales = await createUserWithEmailAndPassword(auth, correo, contrasena);
+      const uid = credenciales.user.uid;
 
-    usuarios.push({ correo, contrasena, nombres, apellidos, telefono });
-    localStorage.setItem('usuarios', JSON.stringify(usuarios));
-    toast.success('Usuario registrado exitosamente');
-    navigate('/ajustes');
+      await setDoc(doc(db, "usuarios", uid), {
+        nombres,
+        apellidos,
+        telefono,
+        correo,
+        dispositivos: [],
+        consumoMensual: null
+      });
+
+      toast.success('Usuario registrado exitosamente');
+      navigate('/ajustes');
+    } catch (error) {
+      console.error(error);
+      toast.error("Error al registrar el usuario: " + error.message);
+    }
   };
 
   return (
@@ -49,25 +65,11 @@ const Registro = () => {
           </div>
           <div className="mb-3">
             <label>Teléfono</label>
-            <input
-              className="form-control"
-              type="tel"
-              pattern="[0-9]*"
-              inputMode="numeric"
-              value={telefono}
-              onChange={(e) => setTelefono(e.target.value.replace(/\D/g, ''))}
-              required
-            />
+            <input className="form-control" type="tel" pattern="[0-9]*" inputMode="numeric" value={telefono} onChange={(e) => setTelefono(e.target.value.replace(/\D/g, ''))} required />
           </div>
           <div className="mb-3">
             <label>Correo electrónico</label>
-            <input
-              type="email"
-              className="form-control"
-              value={correo}
-              onChange={(e) => setCorreo(e.target.value)}
-              required
-            />
+            <input type="email" className="form-control" value={correo} onChange={(e) => setCorreo(e.target.value)} required />
           </div>
           <div className="mb-3">
             <label>Contraseña</label>
@@ -77,11 +79,7 @@ const Registro = () => {
           <button type="submit" className="btn w-100 mb-2" style={{ backgroundColor: '#002147', color: '#fff' }}>
             Registrarse
           </button>
-          <button
-            type="button"
-            className="btn btn-outline-secondary w-100"
-            onClick={() => navigate('/login')}
-          >
+          <button type="button" className="btn btn-outline-secondary w-100" onClick={() => navigate('/login')}>
             ¿Ya tienes cuenta? Iniciar sesión
           </button>
         </form>
