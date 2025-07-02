@@ -1,6 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { FaHome, FaBell, FaClipboardList, FaHistory, FaChartPie, FaSignOutAlt, FaCog, FaUserCircle, FaFlask } from "react-icons/fa";
+import {
+  FaHome, FaBell, FaClipboardList, FaHistory,
+  FaChartPie, FaSignOutAlt, FaCog, FaUserCircle, FaFlask
+} from "react-icons/fa";
+
+import { getAuth, signOut } from "firebase/auth";
+import { getFirestore, doc, getDoc } from "firebase/firestore";
+import { app } from "../firebase";
 
 function Sidebar() {
   const location = useLocation();
@@ -8,27 +15,42 @@ function Sidebar() {
   const [nombreUsuario, setNombreUsuario] = useState("");
 
   useEffect(() => {
-    const userData = localStorage.getItem("usuarioActual");
-    if (userData) {
+    const fetchNombre = async () => {
       try {
-        const user = JSON.parse(userData);
-        if (user.nombres) {
-          setNombreUsuario(user.nombres);
-        } else {
-          setNombreUsuario("Usuario");
+        const auth = getAuth(app);
+        const user = auth.currentUser;
+
+        if (user) {
+          const db = getFirestore(app);
+          const docRef = doc(db, "usuarios", user.uid);
+          const docSnap = await getDoc(docRef);
+
+          if (docSnap.exists()) {
+            const datos = docSnap.data();
+            setNombreUsuario(datos.nombres || "Usuario");
+          } else {
+            setNombreUsuario("Usuario");
+          }
         }
       } catch (error) {
-        console.error("Error leyendo usuarioActual:", error);
+        console.error("Error obteniendo datos del usuario:", error);
         setNombreUsuario("Usuario");
       }
-    }
+    };
+
+    fetchNombre();
   }, []);
 
   const isActive = (path) => location.pathname === path;
 
-  const cerrarSesion = () => {
-    localStorage.removeItem("usuarioActual");
-    navigate("/login");
+  const cerrarSesion = async () => {
+    try {
+      const auth = getAuth(app);
+      await signOut(auth);
+      navigate("/login");
+    } catch (error) {
+      console.error("Error al cerrar sesión:", error);
+    }
   };
 
   return (
@@ -61,12 +83,6 @@ function Sidebar() {
             <FaChartPie className="me-2" /> Mi Consumo
           </Link>
         </li>
-        <li className="nav-item">
-          <Link className={`nav-link d-flex align-items-center ${isActive("/simulador") ? "active" : ""}`} to="/simulador">
-            <FaFlask className="me-2" /> Simulador
-          </Link>
-        </li>
-
       </ul>
 
       <div className="mt-auto d-flex flex-column align-items-center">

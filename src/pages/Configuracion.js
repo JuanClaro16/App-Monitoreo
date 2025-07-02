@@ -4,12 +4,13 @@ import { getAuth } from "firebase/auth";
 import { getFirestore, doc, getDoc, updateDoc } from "firebase/firestore";
 import { app } from "../firebase";
 
+// Ahora cada electrodoméstico tiene un ID interno (deviceUUID)
 const electrodomesticosPorDefecto = [
-    { nombre: "Nevera", consumo: 20 },
-    { nombre: "Lavadora", consumo: 15 },
-    { nombre: "Televisor", consumo: 5 },
-    { nombre: "Aire Acondicionado", consumo: 50 },
-    { nombre: "Microondas", consumo: 10 },
+    { nombre: "Nevera", consumo: 20, deviceUUID: "2" },
+    { nombre: "Lavadora", consumo: 15, deviceUUID: "3" },
+    { nombre: "Televisor", consumo: 5, deviceUUID: "1" },
+    { nombre: "Aire Acondicionado", consumo: 50, deviceUUID: "4" },
+    { nombre: "Microondas", consumo: 10, deviceUUID: "5" },
 ];
 
 const Configuracion = () => {
@@ -19,7 +20,6 @@ const Configuracion = () => {
     const auth = getAuth(app);
     const db = getFirestore(app);
 
-    // Leer configuración desde Firebase al iniciar
     useEffect(() => {
         const cargarConfiguracion = async () => {
             const user = auth.currentUser;
@@ -35,13 +35,13 @@ const Configuracion = () => {
                 if (docSnap.exists()) {
                     const data = docSnap.data();
                     setConsumoMensual(data.consumoMensual || "");
+
                     const base = electrodomesticosPorDefecto.map(e => ({
                         ...e,
                         cantidad: 1,
                         activo: false
                     }));
 
-                    // activar los que están en Firestore
                     const activos = data.dispositivos || [];
                     const completos = base.map(e => {
                         const encontrado = activos.find(d => d.nombre === e.nombre);
@@ -92,7 +92,8 @@ const Configuracion = () => {
             .map(e => ({
                 nombre: e.nombre,
                 consumoTeorico: e.consumo,
-                cantidad: e.cantidad
+                cantidad: e.cantidad,
+                deviceUUID: e.deviceUUID  // 👈 Aquí se guarda internamente el ID correcto
             }));
 
         try {

@@ -9,7 +9,6 @@ import Registro from './pages/Registro';
 import Sidebar from './components/Sidebar';
 import MiConsumo from './pages/MiConsumo';
 import Configuracion from './pages/Configuracion';
-import SimuladorMedicion from './pages/SimuladorMedicion';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
@@ -54,14 +53,6 @@ function App() {
             <Route path="/history" element={<PrivateRoute><History /></PrivateRoute>} />
             <Route path="/consumo" element={<PrivateRoute><MiConsumo /></PrivateRoute>} />
             <Route path="/ajustes" element={<PrivateRoute><Configuracion /></PrivateRoute>} />
-            <Route path="/simulador" element={
-              <div className="d-flex">
-                <Sidebar />
-                <div className="flex-grow-1 p-3">
-                  <SimuladorMedicion />
-                </div>
-              </div>
-            } />
           </>
         ) : (
           <Route path="*" element={<Navigate to="/login" />} />

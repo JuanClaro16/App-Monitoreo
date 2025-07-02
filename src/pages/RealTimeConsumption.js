@@ -72,7 +72,7 @@ const RealTimeConsumption = () => {
         <Card className="mb-4 shadow rounded-4">
           <Card.Body>
             <h5 className="mb-2">Consumo en Tiempo Real</h5>
-            <p className="text-muted">Datos actualizados en vivo desde el sensor.</p>
+            <p className="text-muted">Datos actualizados cada 5 segundos desde el sensor.</p>
             <GraficaConsumo />
           </Card.Body>
         </Card>

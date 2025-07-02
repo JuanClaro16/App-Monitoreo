@@ -42,7 +42,6 @@ const GraficaConsumo = () => {
 
   return (
     <div style={{ width: "100%", height: 300 }}>
-      <h5 className="mb-4">Consumo en Tiempo Real</h5>
       <ResponsiveContainer>
         <LineChart data={datos}>
           <CartesianGrid strokeDasharray="3 3" />

@@ -1,206 +1,152 @@
-import React, { useState } from "react";
-import { Bar } from "react-chartjs-2";
-import { Card, Form, Row, Col } from "react-bootstrap";
+import React, { useEffect, useState } from "react";
 import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  Tooltip,
-  Legend,
-} from "chart.js";
-import { FaChartBar, FaCommentDots } from "react-icons/fa";
-import { FaArrowUp, FaArrowDown } from "react-icons/fa";
+  getFirestore,
+  doc,
+  getDoc
+} from "firebase/firestore";
+import { getAuth } from "firebase/auth";
+import { app } from "../firebase";
+import { Bar } from "react-chartjs-2";
+import "chart.js/auto";
+import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc";
+import timezone from "dayjs/plugin/timezone";
 
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
-ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
+const db = getFirestore(app);
+const auth = getAuth(app);
 
-// Datos simulados por electrodoméstico y año
-const datosSimulados = {
-  "2025": {
-    Televisor: [120, 90, 100, 80, 105, 95, 85, 110, 90, 75, 130, 100],
-    Refrigerador: [310, 320, 300, 305, 330, 315, 295, 310, 298, 290, 305, 300],
-    Lavadora: [50, 45, 60, 55, 65, 58, 48, 62, 50, 53, 61, 59],
-  },
-  "2024": {
-    Televisor: [100, 85, 95, 70, 90, 88, 82, 100, 88, 73, 115, 98],
-    Refrigerador: [300, 310, 295, 298, 325, 310, 285, 295, 280, 270, 290, 288],
-    Lavadora: [45, 43, 50, 48, 55, 53, 47, 56, 44, 49, 55, 52],
-  },
-};
+const History = () => {
+  const [datos, setDatos] = useState([]);
+  const [dispositivos, setDispositivos] = useState([]);
+  const [dispositivoSeleccionado, setDispositivoSeleccionado] = useState("Todos");
+  const [fechaSeleccionada, setFechaSeleccionada] = useState("");
+  const [recargar, setRecargar] = useState(false);
 
-const meses = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+  // Leer dispositivos desde Firebase
+  useEffect(() => {
+    const fetchDispositivos = async () => {
+      const user = auth.currentUser;
+      if (!user) return;
 
-function calcularTendencia(valores) {
-  const trimestres = [
-    valores.slice(0, 3),
-    valores.slice(3, 6),
-    valores.slice(6, 9),
-    valores.slice(9, 12),
-  ];
+      const ref = doc(db, "usuarios", user.uid);
+      const snap = await getDoc(ref);
+      if (snap.exists()) {
+        setDispositivos(snap.data().dispositivos || []);
+      }
+    };
 
-  const promedios = trimestres.map(
-    (t) => t.reduce((a, b) => a + b, 0) / t.length
-  );
+    fetchDispositivos();
+  }, []);
 
-  const tendencias = [];
+  // Obtener datos desde SmartCampus
+  useEffect(() => {
+    const obtenerDatos = async () => {
+      const user = auth.currentUser;
+      if (!user) return;
 
-  for (let i = 1; i < promedios.length; i++) {
-    const diff = promedios[i] - promedios[i - 1];
-    const porcentaje = ((diff / promedios[i - 1]) * 100).toFixed(1);
-    if (diff > 0) {
-      tendencias.push(`Del T${i} al T${i + 1} el consumo aumentó ${porcentaje}%.`);
-    } else {
-      tendencias.push(`Del T${i} al T${i + 1} el consumo disminuyó ${Math.abs(porcentaje)}%.`);
-    }
-  }
+      const ref = doc(db, "usuarios", user.uid);
+      const snap = await getDoc(ref);
+      const dispositivosUsuario = snap.exists() ? snap.data().dispositivos || [] : [];
 
-  return tendencias;
-}
+      const datosTotales = [];
 
-function History() {
-  const [electrodomestico, setElectrodomestico] = useState("Todos");
-  const [anio, setAnio] = useState("2025");
+      for (const disp of dispositivosUsuario) {
+        const res = await fetch(`http://localhost:8080/data/device?uuid=${disp.deviceUUID}`);
+        const json = await res.json();
 
-  const dataAnual = datosSimulados[anio];
-  const dispositivos = Object.keys(dataAnual);
+        const filtrados = json.filter(d => d.values?.power && d.timeStamp).map(d => ({
+          deviceUUID: d.deviceUUID,
+          timeStamp: d.timeStamp,
+          power: d.values.power
+        }));
 
-  // Datos según filtro
-  let valores = [];
+        datosTotales.push(...filtrados);
+      }
 
-  if (electrodomestico === "Todos") {
-    for (let i = 0; i < 12; i++) {
-      const sumaMes = dispositivos.reduce(
-        (acc, d) => acc + dataAnual[d][i],
-        0
-      );
-      valores.push(sumaMes);
-    }
-  } else {
-    valores = dataAnual[electrodomestico];
-  }
+      setDatos(datosTotales);
+    };
 
-  const datosGrafica = {
-    labels: meses,
+    obtenerDatos();
+  }, [recargar]);
+
+  // Filtrar por dispositivo
+  const datosFiltrados = dispositivoSeleccionado === "Todos"
+    ? datos
+    : datos.filter(d => d.deviceUUID === dispositivoSeleccionado);
+
+  // Filtrar por fecha si está seleccionada
+  const datosPorFecha = datosFiltrados.filter(d => {
+    if (!fechaSeleccionada) return true;
+    const fechaDato = dayjs.unix(d.timeStamp).add(5, "hour").tz("America/Bogota");
+    const fechaSeleccion = dayjs(fechaSeleccionada).tz("America/Bogota");
+    return fechaDato.isSame(fechaSeleccion, "day");
+  });
+
+  // Agrupar por minuto (HH:mm) y sumar consumo
+  const agrupados = {};
+  datosPorFecha.forEach(d => {
+    const minuto = dayjs.unix(d.timeStamp).add(5, "hour").tz("America/Bogota").format("HH:mm");
+    if (!agrupados[minuto]) agrupados[minuto] = 0;
+    agrupados[minuto] += d.power;
+  });
+
+  const labels = Object.keys(agrupados);
+  const consumos = Object.values(agrupados);
+
+  const data = {
+    labels,
     datasets: [
       {
-        label: "Consumo (kWh)",
-        data: valores,
-        backgroundColor: "#007bff",
-      },
-    ],
+        label: "Consumo (W)",
+        data: consumos,
+        backgroundColor: "#007bff"
+      }
+    ]
   };
-
-  const opcionesGrafica = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: { display: false },
-    },
-  };
-
-  const promedioMensual = valores.reduce((a, b) => a + b, 0) / valores.length;
-  const mesMax = valores.indexOf(Math.max(...valores));
-  const mesMin = valores.indexOf(Math.min(...valores));
-  const tendencia = calcularTendencia(valores);
 
   return (
-    <>
-      <Card className="mb-4 shadow-sm">
-        <Card.Header className="fw-bold">
-          <FaChartBar className="me-2" />
-          Historial de Consumo
-        </Card.Header>
-        <Card.Body>
-          <Row className="mb-3">
-            <Col md={6}>
-              <Form.Label>Selecciona un electrodoméstico:</Form.Label>
-              <Form.Select
-                value={electrodomestico}
-                onChange={(e) => setElectrodomestico(e.target.value)}
-              >
-                <option>Todos</option>
-                {dispositivos.map((d, i) => (
-                  <option key={i}>{d}</option>
-                ))}
-              </Form.Select>
-            </Col>
-            <Col md={6}>
-              <Form.Label>Selecciona un año:</Form.Label>
-              <Form.Select
-                value={anio}
-                onChange={(e) => setAnio(e.target.value)}
-              >
-                {Object.keys(datosSimulados).map((a, i) => (
-                  <option key={i}>{a}</option>
-                ))}
-              </Form.Select>
-            </Col>
-          </Row>
+    <div className="container mt-4">
+      <h4><i className="bi bi-bar-chart" /> Historial de Consumo</h4>
 
-          {/* Gráfica con altura controlada */}
-          <div style={{ height: "360px" }}>
-            <Bar data={datosGrafica} options={opcionesGrafica} />
-          </div>
-        </Card.Body>
-      </Card>
+      <div className="row mb-3">
+        <div className="col-md-4">
+          <label>Selecciona un electrodoméstico:</label>
+          <select
+            className="form-select"
+            value={dispositivoSeleccionado}
+            onChange={e => setDispositivoSeleccionado(e.target.value)}
+          >
+            <option value="Todos">Todos</option>
+            {dispositivos.map(d => (
+              <option key={d.deviceUUID} value={d.deviceUUID}>{d.nombre}</option>
+            ))}
+          </select>
+        </div>
+        <div className="col-md-4">
+          <label>Selecciona un día (opcional):</label>
+          <input
+            type="date"
+            className="form-control"
+            value={fechaSeleccionada}
+            onChange={e => setFechaSeleccionada(e.target.value)}
+          />
+        </div>
+        <div className="col-md-4 d-flex align-items-end">
+          <button
+            className="btn btn-primary w-100"
+            onClick={() => setRecargar(prev => !prev)}
+          >
+            Actualizar
+          </button>
+        </div>
+      </div>
 
-      {/* Card Análisis */}
-      <Card className="shadow-sm">
-        <Card.Header className="bg-white fw-bold">
-          <FaCommentDots className="me-2" />
-          Análisis de Tendencias
-        </Card.Header>
-        {/* Análisis de tendencias */}
-        <Card.Body>
-          <p>
-            Estás visualizando el consumo de{" "}
-            <strong>
-              {electrodomestico === "Todos"
-                ? "todos los dispositivos"
-                : electrodomestico}
-            </strong>{" "}
-            en el año <strong>{anio}</strong>.
-          </p>
-
-          <p>
-            <strong>Promedio mensual:</strong>{" "}
-            <span className="text-primary">
-              {promedioMensual.toFixed(1)} kWh
-            </span>
-          </p>
-
-          <p className="fw-bold mb-1">Comparación por Trimestres:</p>
-          <ul className="ps-3">
-            {tendencia.map((t, i) => {
-              const esDisminucion = t.includes("disminuyó");
-              const Icono = esDisminucion ? FaArrowDown : FaArrowUp;
-              const colorClase = esDisminucion ? "text-success" : "text-danger";
-              return (
-                <li key={i} className={colorClase + " d-flex align-items-center gap-2"}>
-                  <Icono /> <span>{t}</span>
-                </li>
-              );
-            })}
-          </ul>
-
-          <p className="fw-bold mb-1">
-            Mes de mayor consumo:{" "}
-            <span className="text-dark">
-              {meses[mesMax]} ({valores[mesMax]} kWh)
-            </span>
-          </p>
-          <p className="fw-bold">
-            Mes de menor consumo:{" "}
-            <span className="text-dark">
-              {meses[mesMin]} ({valores[mesMin]} kWh)
-            </span>
-          </p>
-        </Card.Body>
-
-      </Card>
-    </>
+      <Bar data={data} />
+    </div>
   );
-}
+};
 
 export default History;
