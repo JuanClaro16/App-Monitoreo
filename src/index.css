@@ -8,7 +8,7 @@ body {
   width: 250px;
   background-color: #002b5b;
   color: white;
-  height: 100vh;
+  height: 100%;
   padding: 20px;
   display: flex;
   flex-direction: column;
@@ -193,4 +193,9 @@ button:hover {
 
 .barChart {
   margin-bottom: 40px;
+}
+
+.row{
+  justify-content: center;
+  gap: 20px;
 }

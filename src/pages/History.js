@@ -22,8 +22,7 @@ const History = () => {
   const [datos, setDatos] = useState([]);
   const [dispositivos, setDispositivos] = useState([]);
   const [dispositivoSeleccionado, setDispositivoSeleccionado] = useState("Todos");
-  const [fechaSeleccionada, setFechaSeleccionada] = useState("");
-  const [recargar, setRecargar] = useState(false);
+  const [fechaSeleccionada, setFechaSeleccionada] = useState(dayjs().format("YYYY-MM-DD"));
 
   // Leer dispositivos desde Firebase
   useEffect(() => {
@@ -57,7 +56,7 @@ const History = () => {
         const res = await fetch(`http://localhost:8080/data/device?uuid=${disp.deviceUUID}`);
         const json = await res.json();
 
-        const filtrados = json.filter(d => d.values?.power && d.timeStamp).map(d => ({
+        const filtrados = json.filter(d => d.values?.power !== undefined && d.values?.power !== null && d.timeStamp).map(d => ({
           deviceUUID: d.deviceUUID,
           timeStamp: d.timeStamp,
           power: d.values.power
@@ -70,37 +69,57 @@ const History = () => {
     };
 
     obtenerDatos();
-  }, [recargar]);
+    const intervalo = setInterval(obtenerDatos, 10000); // cada 10 segundos
+    return () => clearInterval(intervalo);
+  }, []);
 
   // Filtrar por dispositivo
   const datosFiltrados = dispositivoSeleccionado === "Todos"
     ? datos
     : datos.filter(d => d.deviceUUID === dispositivoSeleccionado);
 
-  // Filtrar por fecha si está seleccionada
+  // Filtrar por fecha
   const datosPorFecha = datosFiltrados.filter(d => {
-    if (!fechaSeleccionada) return true;
-    const fechaDato = dayjs.unix(d.timeStamp).add(5, "hour").tz("America/Bogota");
-    const fechaSeleccion = dayjs(fechaSeleccionada).tz("America/Bogota");
+    const fechaDato = dayjs.unix(d.timeStamp).utcOffset(0);
+    const fechaSeleccion = dayjs(fechaSeleccionada).startOf("day");
     return fechaDato.isSame(fechaSeleccion, "day");
   });
 
-  // Agrupar por minuto (HH:mm) y sumar consumo
+  // Agrupar por minuto y calcular energía en Wh
   const agrupados = {};
+  const conteo = {};
+
   datosPorFecha.forEach(d => {
-    const minuto = dayjs.unix(d.timeStamp).add(5, "hour").tz("America/Bogota").format("HH:mm");
-    if (!agrupados[minuto]) agrupados[minuto] = 0;
-    agrupados[minuto] += d.power;
+    const minuto = dayjs.unix(d.timeStamp).utcOffset(0).format("HH:mm");
+    if (!agrupados[minuto]) {
+      agrupados[minuto] = [];
+    }
+    agrupados[minuto].push(d.power);
   });
 
+  const UMBRAL_MAXIMO_W = 300; // umbral para ignorar valores anómalos
   const labels = Object.keys(agrupados);
-  const consumos = Object.values(agrupados);
+  const consumos = labels.map(label => {
+    const valoresValidos = agrupados[label].filter(p => p >= 0 && p < UMBRAL_MAXIMO_W);
+    if (valoresValidos.length === 0) return 0;
+    const promedio = valoresValidos.reduce((a, b) => a + b, 0) / valoresValidos.length;
+    return parseFloat((promedio / 60).toFixed(2));
+  });
+
+  // Estadísticas de resumen
+  const totalWh = consumos.reduce((a, b) => a + b, 0);
+  const totalKWh = parseFloat((totalWh / 1000).toFixed(4));
+  const max = Math.max(...consumos);
+  const min = Math.min(...consumos);
+  const avg = parseFloat((totalWh / consumos.length).toFixed(2));
+  const horaMax = labels[consumos.indexOf(max)] || "-";
+  const horaMin = labels[consumos.indexOf(min)] || "-";
 
   const data = {
     labels,
     datasets: [
       {
-        label: "Consumo (W)",
+        label: "Energía (Wh)",
         data: consumos,
         backgroundColor: "#007bff"
       }
@@ -109,7 +128,10 @@ const History = () => {
 
   return (
     <div className="container mt-4">
-      <h4><i className="bi bi-bar-chart" /> Historial de Consumo</h4>
+      <div className="d-flex justify-content-between align-items-center mb-3">
+        <h4><i className="bi bi-bar-chart" /> Historial de Consumo</h4>
+        <small className="text-muted">Actualización automática cada 10 s</small>
+      </div>
 
       <div className="row mb-3">
         <div className="col-md-4">
@@ -134,17 +156,40 @@ const History = () => {
             onChange={e => setFechaSeleccionada(e.target.value)}
           />
         </div>
-        <div className="col-md-4 d-flex align-items-end">
-          <button
-            className="btn btn-primary w-100"
-            onClick={() => setRecargar(prev => !prev)}
-          >
-            Actualizar
-          </button>
-        </div>
       </div>
 
       <Bar data={data} />
+
+      <div className="mt-5 p-3 bg-light rounded border">
+        <h5>Resumen de Consumo</h5>
+        <table className="table table-bordered">
+          <tbody>
+            <tr>
+              <th>Total de energía consumida:</th>
+              <td>{totalWh.toFixed(2)} Wh</td>
+            </tr>
+            <tr>
+              <th>Equivalente en kWh:</th>
+              <td>{totalKWh} kWh</td>
+            </tr>
+            <tr>
+              <th>Dispositivo:</th>
+              <td>
+                {dispositivoSeleccionado === "Todos"
+                  ? "Todos"
+                  : (dispositivos.find(d => d.deviceUUID === dispositivoSeleccionado)?.nombre || dispositivoSeleccionado)}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h6>Análisis de Tendencias</h6>
+        <ul>
+          <li>🔼 Mayor consumo: {horaMax} – {max} Wh</li>
+          <li>🔽 Menor consumo: {horaMin} – {min} Wh</li>
+          <li>📊 Promedio: {avg} Wh/min</li>
+        </ul>
+      </div>
     </div>
   );
 };
