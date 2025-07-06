@@ -14,7 +14,7 @@ const GraficaConsumo = () => {
 
   const obtenerDato = async () => {
     try {
-      const res = await fetch("http://localhost:8080/data/device?uuid=1");
+      const res = await fetch("http://localhost:8080/data/device?uuid=3");
       const json = await res.json();
 
       const ultimos = json.filter(d => d.values && d.values.power !== undefined);

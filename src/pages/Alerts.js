@@ -1,163 +1,158 @@
-import React, { useState, useEffect } from "react";
-import { Card, Badge, Form } from "react-bootstrap";
-import { FaBolt, FaExclamationTriangle, FaBroom } from "react-icons/fa";
+import React, { useEffect, useState } from "react";
+import { getFirestore, doc, getDoc } from "firebase/firestore";
+import { getAuth } from "firebase/auth";
+import { app } from "../firebase";
+import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc";
+import timezone from "dayjs/plugin/timezone";
+import isSameOrAfter from "dayjs/plugin/isSameOrAfter";
+import { FaBolt } from "react-icons/fa";
+import { Badge, Button, Card, Col, Container, Form, Row } from "react-bootstrap";
 
-// Lista de electrodomésticos simulados
-const electrodomesticos = [
-  "Todos",
-  "Refrigerador",
-  "Lavadora",
-  "Aire Acondicionado",
-  "Televisor",
-  "Computadora",
-  "Microondas"
-];
+// Extensiones de dayjs
+dayjs.extend(utc);
+dayjs.extend(timezone);
+dayjs.extend(isSameOrAfter);
 
-const estadosDisponibles = ["Todos", "bueno", "moderado", "excesivo"];
+const db = getFirestore(app);
+const auth = getAuth(app);
 
-// Función que genera alertas simuladas
-const generarAlertasSimuladas = () => {
-  const estados = [];
-
-  for (let i = 0; i < 20; i++) {
-    const dispositivo = electrodomesticos[Math.floor(Math.random() * (electrodomesticos.length - 1)) + 1];
-    const consumo = Math.floor(Math.random() * 120);
-    const fecha = new Date(Date.now() - Math.random() * 86400000 * 7); // Últimos 7 días
-
-    let estado = "bueno";
-    if (consumo >= 80) estado = "excesivo";
-    else if (consumo >= 50) estado = "moderado";
-
-    estados.push({
-      dispositivo,
-      consumo,
-      fecha: fecha.toLocaleString(),
-      estado
-    });
-  }
-
-  return estados;
-};
-
-// Mapeos de estado a estilos y texto
-const colorPorEstado = {
-  bueno: "success",
-  moderado: "warning",
-  excesivo: "danger"
-};
-
-const textoPorEstado = {
-  bueno: "Consumo dentro del rango ideal.",
-  moderado: "Consumo moderado, revisar uso.",
-  excesivo: "Exceso de consumo detectado."
+const umbrales = {
+    Nevera: { moderado: 4.2, excesivo: 5.0 }, // en Watts por minuto
+    Televisor: { moderado: 110, excesivo: 150 },
+    Lavadora: { moderado: 10.0, excesivo: 12.5 } // 800-1000W en 80 minutos → promedio 10-12.5 W/min
 };
 
 const Alerts = () => {
-  const [alertasTotales, setAlertasTotales] = useState([]);
-  const [alertasFiltradas, setAlertasFiltradas] = useState([]);
+    const [alertas, setAlertas] = useState([]);
+    const [dispositivoFiltro, setDispositivoFiltro] = useState("Todos");
+    const [estadoFiltro, setEstadoFiltro] = useState("TODOS");
+    const [dispositivos, setDispositivos] = useState([]);
 
-  const [filtroDispositivo, setFiltroDispositivo] = useState("Todos");
-  const [filtroEstado, setFiltroEstado] = useState("Todos");
+    const fetchDatos = async () => {
+        const user = auth.currentUser;
+        if (!user) return;
 
-  // Generar alertas al cargar
-  useEffect(() => {
-    const simuladas = generarAlertasSimuladas();
-    setAlertasTotales(simuladas);
-  }, []);
+        const ref = doc(db, "usuarios", user.uid);
+        const snap = await getDoc(ref);
+        if (!snap.exists()) return;
 
-  // Aplicar filtros cada vez que cambien
-  useEffect(() => {
-    const filtradas = alertasTotales.filter((a) => {
-      const coincideDispositivo = filtroDispositivo === "Todos" || a.dispositivo === filtroDispositivo;
-      const coincideEstado = filtroEstado === "Todos" || a.estado === filtroEstado;
-      return coincideDispositivo && coincideEstado;
+        const config = snap.data();
+        setDispositivos(config.dispositivos || []);
+
+        const ahora = dayjs().tz("America/Bogota");
+        const hace4Horas = ahora.subtract(4, "hour");
+
+        const nuevasAlertas = [];
+
+        for (const disp of config.dispositivos || []) {
+            const res = await fetch(`http://localhost:8080/data/device?uuid=${disp.deviceUUID}`);
+            const json = await res.json();
+
+            const datosFiltrados = json.filter(d => {
+                const ts = dayjs.unix(d.timeStamp).tz("America/Bogota");
+                return ts.isSameOrAfter(hace4Horas) && typeof d.values?.power === "number";
+            });
+
+            const agrupados = {};
+            datosFiltrados.forEach(d => {
+                const minuto = dayjs.unix(d.timeStamp).tz("America/Bogota").format("YYYY-MM-DD HH:mm");
+                if (!agrupados[minuto]) agrupados[minuto] = [];
+                agrupados[minuto].push(d.values.power);
+            });
+
+            Object.keys(agrupados).forEach(min => {
+                const promedio = agrupados[min].reduce((a, b) => a + b, 0) / agrupados[min].length;
+                const nombre = disp.nombre;
+                const umbral = umbrales[nombre] || {};
+
+                let estado = null;
+                if (promedio >= umbral.excesivo) estado = "excesivo";
+                else if (promedio >= umbral.moderado) estado = "moderado";
+
+                if (estado) {
+                    nuevasAlertas.push({
+                        dispositivo: nombre,
+                        consumo: promedio.toFixed(1),
+                        fecha: min,
+                        estado
+                    });
+                }
+            });
+        }
+
+        setAlertas(nuevasAlertas);
+    };
+
+    useEffect(() => {
+        fetchDatos();
+    }, []);
+
+    const limpiarFiltros = () => {
+        setDispositivoFiltro("Todos");
+        setEstadoFiltro("TODOS");
+    };
+
+    const colorPorEstado = {
+        moderado: "warning",
+        excesivo: "danger"
+    };
+
+    const textoPorEstado = {
+        moderado: "Consumo moderado, revisar uso.",
+        excesivo: "Exceso de consumo detectado."
+    };
+
+    const alertasFiltradas = alertas.filter(a => {
+        const matchDispositivo = dispositivoFiltro === "Todos" || a.dispositivo === dispositivoFiltro;
+        const matchEstado = estadoFiltro === "TODOS" || a.estado === estadoFiltro;
+        return matchDispositivo && matchEstado;
     });
 
-    setAlertasFiltradas(filtradas);
-  }, [alertasTotales, filtroDispositivo, filtroEstado]);
+    return (
+        <Container className="mt-4">
+            <h4 className="mb-3 text-danger">
+                <FaBolt className="me-2" /> Alertas de Consumo
+            </h4>
 
-  return (
-    <div className="p-4">
-      <h4 className="mb-3">
-        <FaExclamationTriangle className="me-2 text-danger" />
-        Alertas de Consumo
-      </h4>
+            <Row className="mb-3">
+                <Col md={4}>
+                    <Form.Label>Filtrar por dispositivo:</Form.Label>
+                    <Form.Select value={dispositivoFiltro} onChange={e => setDispositivoFiltro(e.target.value)}>
+                        <option value="Todos">Todos</option>
+                        {dispositivos.map((d, idx) => (
+                            <option key={idx} value={d.nombre}>{d.nombre}</option>
+                        ))}
+                    </Form.Select>
+                </Col>
+                <Col md={4}>
+                    <Form.Label>Filtrar por estado:</Form.Label>
+                    <Form.Select value={estadoFiltro} onChange={e => setEstadoFiltro(e.target.value)}>
+                        <option value="TODOS">TODOS</option>
+                        <option value="moderado">MODERADO</option>
+                        <option value="excesivo">EXCESIVO</option>
+                    </Form.Select>
+                </Col>
+                <Col md={4} className="d-flex align-items-end">
+                    <Button variant="secondary" onClick={limpiarFiltros}>Limpiar filtros</Button>
+                </Col>
+            </Row>
 
-      {/* Filtros */}
-      <div className="row mb-2">
-        <div className="col-md-6 mb-2">
-          <Form.Label>Filtrar por dispositivo:</Form.Label>
-          <Form.Select
-            value={filtroDispositivo}
-            onChange={(e) => setFiltroDispositivo(e.target.value)}
-          >
-            {electrodomesticos.map((d, i) => (
-              <option key={i} value={d}>
-                {d}
-              </option>
+            {alertasFiltradas.map((a, idx) => (
+                <Card key={idx} className="mb-3 border border-2 border-success">
+                    <Card.Body>
+                        <Card.Title>
+                            <FaBolt className="text-success me-2" />
+                            {a.dispositivo} – {a.consumo} W
+                        </Card.Title>
+                        <Card.Subtitle className="mb-2 text-muted">{a.fecha}</Card.Subtitle>
+                        <Card.Text>{textoPorEstado[a.estado]}</Card.Text>
+                        <Badge bg={colorPorEstado[a.estado]} className="float-end text-uppercase">{a.estado}</Badge>
+                    </Card.Body>
+                </Card>
             ))}
-          </Form.Select>
-        </div>
-        <div className="col-md-6 mb-2">
-          <Form.Label>Filtrar por estado:</Form.Label>
-          <Form.Select
-            value={filtroEstado}
-            onChange={(e) => setFiltroEstado(e.target.value)}
-          >
-            {estadosDisponibles.map((e, i) => (
-              <option key={i} value={e}>
-                {e.toUpperCase()}
-              </option>
-            ))}
-          </Form.Select>
-        </div>
-      </div>
-
-      {/* Botón de limpiar filtros */}
-      <div className="d-flex justify-content-end mb-4">
-        <button
-          className="btn btn-outline-secondary btn-sm d-flex align-items-center"
-          onClick={() => {
-            setFiltroDispositivo("Todos");
-            setFiltroEstado("Todos");
-            const nuevas = generarAlertasSimuladas();
-            setAlertasTotales(nuevas);
-          }}
-        >
-          <FaBroom className="me-2" />
-          Limpiar filtros
-        </button>
-      </div>
-
-      {/* Lista de alertas */}
-      {alertasFiltradas.length === 0 ? (
-        <p className="text-muted">No hay alertas que coincidan con los filtros.</p>
-      ) : (
-        alertasFiltradas.map((alerta, idx) => (
-          <Card
-            key={idx}
-            className={`mb-3 shadow-sm border-${colorPorEstado[alerta.estado]} rounded-4`}
-          >
-            <Card.Body>
-              <div className="d-flex justify-content-between align-items-center">
-                <div>
-                  <h5 className="mb-1">
-                    <FaBolt className={`me-2 text-${colorPorEstado[alerta.estado]}`} />
-                    {alerta.dispositivo} – {alerta.consumo.toFixed(1)} kWh
-                  </h5>
-                  <small className="text-muted">{alerta.fecha}</small>
-                  <p className="mt-2 mb-0">{textoPorEstado[alerta.estado]}</p>
-                </div>
-                <Badge bg={colorPorEstado[alerta.estado]} pill>
-                  {alerta.estado.toUpperCase()}
-                </Badge>
-              </div>
-            </Card.Body>
-          </Card>
-        ))
-      )}
-    </div>
-  );
+        </Container>
+    );
 };
 
 export default Alerts;

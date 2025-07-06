@@ -7,8 +7,8 @@ import { app } from "../firebase";
 // Ahora cada electrodoméstico tiene un ID interno (deviceUUID)
 const electrodomesticosPorDefecto = [
     { nombre: "Nevera", consumo: 58, deviceUUID: "2" },
-    { nombre: "Lavadora", consumo: 15, deviceUUID: "3" },
-    { nombre: "Televisor", consumo: 5, deviceUUID: "1" },
+    { nombre: "Lavadora", consumo: 30, deviceUUID: "3" },
+    { nombre: "Televisor", consumo: 15, deviceUUID: "1" },
     { nombre: "Aire Acondicionado", consumo: 50, deviceUUID: "4" },
     { nombre: "Microondas", consumo: 10, deviceUUID: "5" },
 ];

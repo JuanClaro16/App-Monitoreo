@@ -11,6 +11,7 @@ import "chart.js/auto";
 import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc";
 import timezone from "dayjs/plugin/timezone";
+import { Form } from "react-bootstrap";
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -18,13 +19,15 @@ dayjs.extend(timezone);
 const db = getFirestore(app);
 const auth = getAuth(app);
 
+const colores = ["#007bff", "#28a745", "#ffc107", "#dc3545", "#17a2b8", "#6610f2"];
+
 const History = () => {
   const [datos, setDatos] = useState([]);
   const [dispositivos, setDispositivos] = useState([]);
   const [dispositivoSeleccionado, setDispositivoSeleccionado] = useState("Todos");
   const [fechaSeleccionada, setFechaSeleccionada] = useState(dayjs().format("YYYY-MM-DD"));
+  const [filtrarUltimas4h, setFiltrarUltimas4h] = useState(false);
 
-  // Leer dispositivos desde Firebase
   useEffect(() => {
     const fetchDispositivos = async () => {
       const user = auth.currentUser;
@@ -40,7 +43,6 @@ const History = () => {
     fetchDispositivos();
   }, []);
 
-  // Obtener datos desde SmartCampus
   useEffect(() => {
     const obtenerDatos = async () => {
       const user = auth.currentUser;
@@ -69,62 +71,71 @@ const History = () => {
     };
 
     obtenerDatos();
-    const intervalo = setInterval(obtenerDatos, 10000); // cada 10 segundos
+    const intervalo = setInterval(obtenerDatos, 10000);
     return () => clearInterval(intervalo);
   }, []);
 
-  // Filtrar por dispositivo
+  const filtrarUltimas4Horas = (data) => {
+    const ordenados = [...data].sort((a, b) => a.timeStamp - b.timeStamp);
+    if (ordenados.length === 0) return [];
+    const ultimaHora = ordenados[ordenados.length - 1].timeStamp;
+    const desde = ultimaHora - 4 * 3600;
+    return ordenados.filter(d => d.timeStamp >= desde);
+  };
+
   const datosFiltrados = dispositivoSeleccionado === "Todos"
     ? datos
     : datos.filter(d => d.deviceUUID === dispositivoSeleccionado);
 
-  // Filtrar por fecha
   const datosPorFecha = datosFiltrados.filter(d => {
     const fechaDato = dayjs.unix(d.timeStamp).utcOffset(0);
     const fechaSeleccion = dayjs(fechaSeleccionada).startOf("day");
     return fechaDato.isSame(fechaSeleccion, "day");
   });
 
-  // Agrupar por minuto y calcular energía en Wh
+  const datosFinales = filtrarUltimas4h ? filtrarUltimas4Horas(datosPorFecha) : datosPorFecha;
+
   const agrupados = {};
-  const conteo = {};
-
-  datosPorFecha.forEach(d => {
+  datosFinales.forEach(d => {
     const minuto = dayjs.unix(d.timeStamp).utcOffset(0).format("HH:mm");
-    if (!agrupados[minuto]) {
-      agrupados[minuto] = [];
-    }
-    agrupados[minuto].push(d.power);
+    if (!agrupados[minuto]) agrupados[minuto] = {};
+    if (!agrupados[minuto][d.deviceUUID]) agrupados[minuto][d.deviceUUID] = [];
+    agrupados[minuto][d.deviceUUID].push(d.power);
   });
 
-  const UMBRAL_MAXIMO_W = 300; // umbral para ignorar valores anómalos
-  const labels = Object.keys(agrupados);
-  const consumos = labels.map(label => {
-    const valoresValidos = agrupados[label].filter(p => p >= 0 && p < UMBRAL_MAXIMO_W);
-    if (valoresValidos.length === 0) return 0;
-    const promedio = valoresValidos.reduce((a, b) => a + b, 0) / valoresValidos.length;
-    return parseFloat((promedio / 60).toFixed(2));
+  const UMBRAL_MAXIMO_W = 1000;
+  const labels = Object.keys(agrupados).sort();
+
+  const dispositivosFiltrados = dispositivoSeleccionado === "Todos"
+    ? dispositivos
+    : dispositivos.filter(d => d.deviceUUID === dispositivoSeleccionado);
+
+  const datasets = dispositivosFiltrados.map((disp, i) => {
+    const data = labels.map(label => {
+      const valores = agrupados[label]?.[disp.deviceUUID] || [];
+      const valoresValidos = valores.filter(p => p >= 0 && p < UMBRAL_MAXIMO_W);
+      if (valoresValidos.length === 0) return 0;
+      const promedio = valoresValidos.reduce((a, b) => a + b, 0) / valoresValidos.length;
+      return parseFloat((promedio / 60).toFixed(2));
+    });
+    const colorIndex = dispositivos.findIndex(d => d.deviceUUID === disp.deviceUUID);
+    return {
+      label: disp.nombre,
+      data,
+      backgroundColor: colores[colorIndex % colores.length]
+    };
   });
 
-  // Estadísticas de resumen
-  const totalWh = consumos.reduce((a, b) => a + b, 0);
+  const data = { labels, datasets };
+
+  const totalWh = datasets.reduce((acum, ds) => acum + ds.data.reduce((a, b) => a + b, 0), 0);
   const totalKWh = parseFloat((totalWh / 1000).toFixed(4));
-  const max = Math.max(...consumos);
-  const min = Math.min(...consumos);
-  const avg = parseFloat((totalWh / consumos.length).toFixed(2));
-  const horaMax = labels[consumos.indexOf(max)] || "-";
-  const horaMin = labels[consumos.indexOf(min)] || "-";
-
-  const data = {
-    labels,
-    datasets: [
-      {
-        label: "Energía (Wh)",
-        data: consumos,
-        backgroundColor: "#007bff"
-      }
-    ]
-  };
+  const allValues = datasets.flatMap(ds => ds.data);
+  const max = Math.max(...allValues);
+  const min = Math.min(...allValues);
+  const avg = parseFloat((totalWh / allValues.length).toFixed(2));
+  const horaMax = labels[allValues.indexOf(max)] || "-";
+  const horaMin = labels[allValues.indexOf(min)] || "-";
 
   return (
     <div className="container mt-4">
@@ -156,9 +167,46 @@ const History = () => {
             onChange={e => setFechaSeleccionada(e.target.value)}
           />
         </div>
+        <div className="col-md-4 d-flex align-items-end">
+          <Form.Check
+            type="switch"
+            id="filtro-ultimas-4h"
+            label="Mostrar solo las últimas 4 horas medidas"
+            checked={filtrarUltimas4h}
+            onChange={(e) => setFiltrarUltimas4h(e.target.checked)}
+          />
+        </div>
       </div>
 
-      <Bar data={data} />
+      <Bar
+        data={data}
+        options={{
+          scales: {
+            y: {
+              title: {
+                display: true,
+                text: 'Energía (Wh)'
+              }
+            }
+          },
+          plugins: {
+            legend: {
+              labels: {
+                generateLabels: (chart) => {
+                  const original = chart.data.datasets;
+                  return original.map((ds, i) => ({
+                    text: `${ds.label} – Wh`,
+                    fillStyle: ds.backgroundColor,
+                    strokeStyle: ds.backgroundColor,
+                    index: i
+                  }));
+                }
+              }
+            }
+          }
+        }}
+      />
+
 
       <div className="mt-5 p-3 bg-light rounded border">
         <h5>Resumen de Consumo</h5>

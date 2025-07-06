@@ -9,6 +9,7 @@ import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc";
 import timezone from "dayjs/plugin/timezone";
 import isSameOrAfter from "dayjs/plugin/isSameOrAfter";
+import { Spinner } from "react-bootstrap";
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -20,64 +21,63 @@ const auth = getAuth(app);
 const MiConsumo = () => {
     const [config, setConfig] = useState(null);
     const [sensorData, setSensorData] = useState({ total: 0, porDispositivo: {} });
+    const [loading, setLoading] = useState(true);
+
+    const fetchData = async () => {
+        const user = auth.currentUser;
+        if (!user) return;
+
+        setLoading(true);
+        const ref = doc(db, "usuarios", user.uid);
+        const snap = await getDoc(ref);
+        if (!snap.exists()) return;
+
+        const data = snap.data();
+        setConfig(data);
+
+        const ahora = dayjs().tz("America/Bogota");
+        const inicioDelMes = ahora.startOf("month");
+        let totalEnergiaWh = 0;
+        const consumoPorDispositivo = {};
+        const UMBRAL_MAXIMO_W = 300;
+
+        for (const disp of data.dispositivos || []) {
+            const res = await fetch(`http://localhost:8080/data/device?uuid=${disp.deviceUUID}`);
+            const json = await res.json();
+
+            const datosFiltrados = json.filter(d => {
+                const ts = dayjs.unix(d.timeStamp).tz("America/Bogota");
+                return ts.isSameOrAfter(inicioDelMes) && typeof d.values?.power === "number";
+            });
+
+            const agrupados = {};
+            datosFiltrados.forEach(d => {
+                const minuto = dayjs.unix(d.timeStamp).tz("America/Bogota").format("YYYY-MM-DD HH:mm");
+                if (!agrupados[minuto]) agrupados[minuto] = [];
+                agrupados[minuto].push(d.values.power);
+            });
+
+            const consumos = Object.keys(agrupados).map(minuto => {
+                const valoresValidos = agrupados[minuto].filter(p => p >= 0 && p < UMBRAL_MAXIMO_W);
+                if (valoresValidos.length === 0) return 0;
+                const promedio = valoresValidos.reduce((a, b) => a + b, 0) / valoresValidos.length;
+                return promedio;
+            });
+
+            const totalWh = consumos.reduce((acc, el) => acc + (el / 60), 0);
+            totalEnergiaWh += totalWh;
+            consumoPorDispositivo[String(disp.deviceUUID).trim()] = parseFloat((totalWh / 1000).toFixed(4));
+        }
+
+        setSensorData({
+            total: parseFloat((totalEnergiaWh / 1000).toFixed(4)),
+            porDispositivo: consumoPorDispositivo
+        });
+        setLoading(false);
+    };
 
     useEffect(() => {
-        const fetchConfigurationAndData = async () => {
-            const user = auth.currentUser;
-            if (!user) return;
-
-            const ref = doc(db, "usuarios", user.uid);
-            const snap = await getDoc(ref);
-            if (!snap.exists()) return;
-
-            const data = snap.data();
-            setConfig(data);
-
-            const hoy = dayjs().tz("America/Bogota");
-            const inicioDelDia = hoy.startOf('day');
-            let totalEnergiaKWh = 0;
-            const consumoPorDispositivo = {};
-            const UMBRAL_MAXIMO_W = 300;
-
-            for (const disp of data.dispositivos || []) {
-                const res = await fetch(`http://localhost:8080/data/device?uuid=${disp.deviceUUID}`);
-                const json = await res.json();
-
-                const datosFiltrados = json.filter(d => {
-                    const ts = dayjs.unix(d.timeStamp).tz("America/Bogota");
-                    return ts.isSameOrAfter(inicioDelDia) && typeof d.values?.power === "number";
-                });
-
-                const agrupados = {};
-
-                datosFiltrados.forEach(d => {
-                    const minuto = dayjs.unix(d.timeStamp).tz("America/Bogota").format("YYYY-MM-DD HH:mm");
-                    if (!agrupados[minuto]) agrupados[minuto] = [];
-                    agrupados[minuto].push(d.values.power);
-                });
-
-                const consumos = Object.keys(agrupados).map(minuto => {
-                    const valoresValidos = agrupados[minuto].filter(p => p >= 0 && p < UMBRAL_MAXIMO_W);
-                    if (valoresValidos.length === 0) return 0;
-                    const promedio = valoresValidos.reduce((a, b) => a + b, 0) / valoresValidos.length;
-                    return promedio / 60;
-                });
-
-                const totalWh = consumos.reduce((acc, el) => acc + el, 0);
-                const totalKWh = totalWh / 1000;
-                totalEnergiaKWh += totalKWh;
-                consumoPorDispositivo[disp.deviceUUID] = parseFloat(totalKWh.toFixed(4));
-            }
-
-            setSensorData({
-                total: parseFloat(totalEnergiaKWh.toFixed(4)),
-                porDispositivo: consumoPorDispositivo
-            });
-        };
-
-        fetchConfigurationAndData();
-        const intervalo = setInterval(fetchConfigurationAndData, 60000);
-        return () => clearInterval(intervalo);
+        fetchData();
     }, []);
 
     if (!config) {
@@ -89,11 +89,21 @@ const MiConsumo = () => {
         );
     }
 
+    if (loading) {
+        return (
+            <div className="container mt-5 text-center">
+                <Spinner animation="border" role="status" />
+                <p className="mt-3">Cargando datos...</p>
+            </div>
+        );
+    }
+
     const { consumoMensual, dispositivos } = config;
+    const consumoRealTotal = sensorData.total;
 
     const detalleConsumo = dispositivos.map(item => {
         const consumoTeorico = item.consumoTeorico * item.cantidad;
-        const consumoReal = sensorData.porDispositivo?.[item.deviceUUID] || 0;
+        const consumoReal = sensorData.porDispositivo?.[String(item.deviceUUID).trim()] || 0;
         const porcentaje = consumoMensual > 0 ? ((consumoReal / consumoMensual) * 100).toFixed(2) : "0.00";
         return {
             ...item,
@@ -104,7 +114,6 @@ const MiConsumo = () => {
     });
 
     const consumoTeoricoTotal = detalleConsumo.reduce((acc, el) => acc + el.consumoTeorico, 0);
-    const consumoRealTotal = sensorData.total;
 
     const resumenGrafica = [
         { name: "Reportado", consumo: consumoMensual },
