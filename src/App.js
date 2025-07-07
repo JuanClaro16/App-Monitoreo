@@ -9,6 +9,7 @@ import Registro from './pages/Registro';
 import Sidebar from './components/Sidebar';
 import MiConsumo from './pages/MiConsumo';
 import Configuracion from './pages/Configuracion';
+import Simulacion from "./pages/Simulacion";
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
@@ -53,6 +54,7 @@ function App() {
             <Route path="/history" element={<PrivateRoute><History /></PrivateRoute>} />
             <Route path="/consumo" element={<PrivateRoute><MiConsumo /></PrivateRoute>} />
             <Route path="/ajustes" element={<PrivateRoute><Configuracion /></PrivateRoute>} />
+            <Route path="/simulacion" element={<Simulacion />} />
           </>
         ) : (
           <Route path="*" element={<Navigate to="/login" />} />

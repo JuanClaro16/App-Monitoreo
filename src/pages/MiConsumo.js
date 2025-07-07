@@ -2,14 +2,15 @@ import React, { useEffect, useState } from "react";
 import {
     BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, LabelList
 } from "recharts";
-import { getFirestore, doc, getDoc } from "firebase/firestore";
+import { getFirestore, doc, getDoc, updateDoc } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 import { app } from "../firebase";
 import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc";
 import timezone from "dayjs/plugin/timezone";
 import isSameOrAfter from "dayjs/plugin/isSameOrAfter";
-import { Spinner } from "react-bootstrap";
+import { Spinner, Modal, Button, Form } from "react-bootstrap";
+import { useNavigate } from "react-router-dom";
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -22,6 +23,10 @@ const MiConsumo = () => {
     const [config, setConfig] = useState(null);
     const [sensorData, setSensorData] = useState({ total: 0, porDispositivo: {} });
     const [loading, setLoading] = useState(true);
+    const [showModal, setShowModal] = useState(false);
+    const [horasTV, setHorasTV] = useState(4);
+    const [lavadasSemana, setLavadasSemana] = useState(3);
+    const navigate = useNavigate();
 
     const fetchData = async () => {
         const user = auth.currentUser;
@@ -79,6 +84,22 @@ const MiConsumo = () => {
     useEffect(() => {
         fetchData();
     }, []);
+
+    const handleSimular = async () => {
+        const user = auth.currentUser;
+        if (!user) return;
+
+        const ref = doc(db, "usuarios", user.uid);
+        await updateDoc(ref, {
+            configuracion: {
+                televisorHoras: parseInt(horasTV),
+                lavadoraVeces: parseInt(lavadasSemana)
+            }
+        });
+
+        setShowModal(false);
+        navigate('/simulacion');
+    };
 
     if (!config) {
         return (
@@ -178,6 +199,53 @@ const MiConsumo = () => {
                     ))}
                 </tbody>
             </table>
+
+            <div className="text-center mt-4">
+                <button className="btn btn-outline-primary" onClick={() => setShowModal(true)}>
+                    Simular consumo mensual estimado
+                </button>
+                <p className="mt-2 text-muted" style={{ fontSize: "0.9rem" }}>
+                    Esta simulación se basa en los datos reales medidos de las últimas 4 horas por dispositivo.
+                </p>
+            </div>
+
+            <Modal show={showModal} onHide={() => setShowModal(false)}>
+                <Modal.Header closeButton>
+                    <Modal.Title>Simulación de Consumo</Modal.Title>
+                </Modal.Header>
+                <Modal.Body>
+                    <Form>
+                        <Form.Group controlId="formHorasTV">
+                            <Form.Label>¿Cuántas horas al día usas el televisor?</Form.Label>
+                            <Form.Control
+                                type="number"
+                                min="1"
+                                max="24"
+                                value={horasTV}
+                                onChange={(e) => setHorasTV(e.target.value)}
+                            />
+                        </Form.Group>
+                        <Form.Group controlId="formLavadora" className="mt-3">
+                            <Form.Label>¿Cuántas veces a la semana usas la lavadora?</Form.Label>
+                            <Form.Control
+                                type="number"
+                                min="1"
+                                max="30"
+                                value={lavadasSemana}
+                                onChange={(e) => setLavadasSemana(e.target.value)}
+                            />
+                        </Form.Group>
+                    </Form>
+                </Modal.Body>
+                <Modal.Footer>
+                    <Button variant="secondary" onClick={() => setShowModal(false)}>
+                        Cancelar
+                    </Button>
+                    <Button variant="primary" onClick={handleSimular}>
+                        Simular
+                    </Button>
+                </Modal.Footer>
+            </Modal>
         </div>
     );
 };

@@ -1,157 +1,144 @@
+// Alerts.js
 import React, { useEffect, useState } from "react";
-import { getFirestore, doc, getDoc } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
+import { getFirestore, doc, getDoc } from "firebase/firestore";
 import { app } from "../firebase";
 import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc";
 import timezone from "dayjs/plugin/timezone";
-import isSameOrAfter from "dayjs/plugin/isSameOrAfter";
-import { FaBolt } from "react-icons/fa";
-import { Badge, Button, Card, Col, Container, Form, Row } from "react-bootstrap";
 
-// Extensiones de dayjs
 dayjs.extend(utc);
 dayjs.extend(timezone);
-dayjs.extend(isSameOrAfter);
 
-const db = getFirestore(app);
 const auth = getAuth(app);
+const db = getFirestore(app);
 
 const umbrales = {
-    Nevera: { moderado: 4.2, excesivo: 5.0 }, // en Watts por minuto
+    Nevera: { moderado: 160, excesivo: 190 }, // en W
     Televisor: { moderado: 110, excesivo: 150 },
-    Lavadora: { moderado: 10.0, excesivo: 12.5 } // 800-1000W en 80 minutos → promedio 10-12.5 W/min
+    Lavadora: { moderado: 600, excesivo: 800 },
 };
 
 const Alerts = () => {
-    const [alertas, setAlertas] = useState([]);
-    const [dispositivoFiltro, setDispositivoFiltro] = useState("Todos");
-    const [estadoFiltro, setEstadoFiltro] = useState("TODOS");
+    const [datos, setDatos] = useState([]);
     const [dispositivos, setDispositivos] = useState([]);
-
-    const fetchDatos = async () => {
-        const user = auth.currentUser;
-        if (!user) return;
-
-        const ref = doc(db, "usuarios", user.uid);
-        const snap = await getDoc(ref);
-        if (!snap.exists()) return;
-
-        const config = snap.data();
-        setDispositivos(config.dispositivos || []);
-
-        const ahora = dayjs().tz("America/Bogota");
-        const hace4Horas = ahora.subtract(4, "hour");
-
-        const nuevasAlertas = [];
-
-        for (const disp of config.dispositivos || []) {
-            const res = await fetch(`http://localhost:8080/data/device?uuid=${disp.deviceUUID}`);
-            const json = await res.json();
-
-            const datosFiltrados = json.filter(d => {
-                const ts = dayjs.unix(d.timeStamp).tz("America/Bogota");
-                return ts.isSameOrAfter(hace4Horas) && typeof d.values?.power === "number";
-            });
-
-            const agrupados = {};
-            datosFiltrados.forEach(d => {
-                const minuto = dayjs.unix(d.timeStamp).tz("America/Bogota").format("YYYY-MM-DD HH:mm");
-                if (!agrupados[minuto]) agrupados[minuto] = [];
-                agrupados[minuto].push(d.values.power);
-            });
-
-            Object.keys(agrupados).forEach(min => {
-                const promedio = agrupados[min].reduce((a, b) => a + b, 0) / agrupados[min].length;
-                const nombre = disp.nombre;
-                const umbral = umbrales[nombre] || {};
-
-                let estado = null;
-                if (promedio >= umbral.excesivo) estado = "excesivo";
-                else if (promedio >= umbral.moderado) estado = "moderado";
-
-                if (estado) {
-                    nuevasAlertas.push({
-                        dispositivo: nombre,
-                        consumo: promedio.toFixed(1),
-                        fecha: min,
-                        estado
-                    });
-                }
-            });
-        }
-
-        setAlertas(nuevasAlertas);
-    };
+    const [filtroDispositivo, setFiltroDispositivo] = useState("Todos");
+    const [filtroEstado, setFiltroEstado] = useState("TODOS");
 
     useEffect(() => {
-        fetchDatos();
+        const fetchData = async () => {
+            const user = auth.currentUser;
+            if (!user) return;
+
+            const userRef = doc(db, "usuarios", user.uid);
+            const userSnap = await getDoc(userRef);
+            const userData = userSnap.data();
+            const dispositivosUsuario = userData.dispositivos || [];
+            setDispositivos(dispositivosUsuario);
+
+            const resultados = [];
+            for (const disp of dispositivosUsuario) {
+                const response = await fetch(`http://localhost:8080/data/device?uuid=${disp.deviceUUID}`);
+                const json = await response.json();
+
+                const datosAgrupados = {};
+                json.forEach(({ timeStamp, values }) => {
+                    if (values.power > 1000) return; // Ignorar valores basura mayores a 1000 W
+
+                    const fecha = dayjs.unix(timeStamp).tz("America/Bogota");
+                    const minuto = fecha.format("YYYY-MM-DD HH:mm");
+                    if (!datosAgrupados[minuto]) datosAgrupados[minuto] = [];
+                    datosAgrupados[minuto].push(values.power);
+                });
+
+                Object.entries(datosAgrupados).forEach(([minuto, valores]) => {
+                    const promedio = valores.reduce((a, b) => a + b, 0) / valores.length;
+                    const { moderado, excesivo } = umbrales[disp.nombre] || {};
+
+                    let estado = null;
+                    if (promedio > excesivo) estado = "excesivo";
+                    else if (promedio > moderado) estado = "moderado";
+                    else return;
+
+                    resultados.push({
+                        dispositivo: disp.nombre,
+                        consumo: promedio.toFixed(1),
+                        fecha: minuto,
+                        estado,
+                    });
+                });
+            }
+
+            resultados.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+            setDatos(resultados);
+        };
+
+        fetchData();
     }, []);
 
-    const limpiarFiltros = () => {
-        setDispositivoFiltro("Todos");
-        setEstadoFiltro("TODOS");
-    };
-
-    const colorPorEstado = {
-        moderado: "warning",
-        excesivo: "danger"
-    };
-
-    const textoPorEstado = {
-        moderado: "Consumo moderado, revisar uso.",
-        excesivo: "Exceso de consumo detectado."
-    };
-
-    const alertasFiltradas = alertas.filter(a => {
-        const matchDispositivo = dispositivoFiltro === "Todos" || a.dispositivo === dispositivoFiltro;
-        const matchEstado = estadoFiltro === "TODOS" || a.estado === estadoFiltro;
-        return matchDispositivo && matchEstado;
+    const datosFiltrados = datos.filter((d) => {
+        return (
+            (filtroDispositivo === "Todos" || d.dispositivo === filtroDispositivo) &&
+            (filtroEstado === "TODOS" || d.estado === filtroEstado)
+        );
     });
 
+    const limpiarFiltros = () => {
+        setFiltroDispositivo("Todos");
+        setFiltroEstado("TODOS");
+    };
+
     return (
-        <Container className="mt-4">
-            <h4 className="mb-3 text-danger">
-                <FaBolt className="me-2" /> Alertas de Consumo
-            </h4>
+        <div className="container mt-4">
+            <h2 className="mb-4 text-danger">
+                ⚡ Alertas de Consumo
+            </h2>
 
-            <Row className="mb-3">
-                <Col md={4}>
-                    <Form.Label>Filtrar por dispositivo:</Form.Label>
-                    <Form.Select value={dispositivoFiltro} onChange={e => setDispositivoFiltro(e.target.value)}>
+            <div className="row mb-3">
+                <div className="col-md-3">
+                    <label>Filtrar por dispositivo:</label>
+                    <select className="form-control" value={filtroDispositivo} onChange={(e) => setFiltroDispositivo(e.target.value)}>
                         <option value="Todos">Todos</option>
-                        {dispositivos.map((d, idx) => (
-                            <option key={idx} value={d.nombre}>{d.nombre}</option>
+                        {dispositivos.map((d) => (
+                            <option key={d.deviceUUID} value={d.nombre}>
+                                {d.nombre}
+                            </option>
                         ))}
-                    </Form.Select>
-                </Col>
-                <Col md={4}>
-                    <Form.Label>Filtrar por estado:</Form.Label>
-                    <Form.Select value={estadoFiltro} onChange={e => setEstadoFiltro(e.target.value)}>
+                    </select>
+                </div>
+                <div className="col-md-3">
+                    <label>Filtrar por estado:</label>
+                    <select className="form-control" value={filtroEstado} onChange={(e) => setFiltroEstado(e.target.value)}>
                         <option value="TODOS">TODOS</option>
-                        <option value="moderado">MODERADO</option>
-                        <option value="excesivo">EXCESIVO</option>
-                    </Form.Select>
-                </Col>
-                <Col md={4} className="d-flex align-items-end">
-                    <Button variant="secondary" onClick={limpiarFiltros}>Limpiar filtros</Button>
-                </Col>
-            </Row>
+                        <option value="moderado">Moderado</option>
+                        <option value="excesivo">Excesivo</option>
+                    </select>
+                </div>
+                <div className="col-md-3 d-flex align-items-end">
+                    <button className="btn btn-secondary" onClick={limpiarFiltros}>Limpiar filtros</button>
+                </div>
+            </div>
 
-            {alertasFiltradas.map((a, idx) => (
-                <Card key={idx} className="mb-3 border border-2 border-success">
-                    <Card.Body>
-                        <Card.Title>
-                            <FaBolt className="text-success me-2" />
-                            {a.dispositivo} – {a.consumo} W
-                        </Card.Title>
-                        <Card.Subtitle className="mb-2 text-muted">{a.fecha}</Card.Subtitle>
-                        <Card.Text>{textoPorEstado[a.estado]}</Card.Text>
-                        <Badge bg={colorPorEstado[a.estado]} className="float-end text-uppercase">{a.estado}</Badge>
-                    </Card.Body>
-                </Card>
-            ))}
-        </Container>
+            <div className="mt-4">
+                {datosFiltrados.map((alerta, i) => (
+                    <div className="card border-success mb-3" key={i}>
+                        <div className="card-body">
+                            <div className="d-flex justify-content-between">
+                                <h5 className="card-title">⚡ {alerta.dispositivo} – {alerta.consumo} W</h5>
+                                <span className={`badge ${alerta.estado === "excesivo" ? "bg-danger" : "bg-warning text-dark"}`}>
+                                    {alerta.estado.toUpperCase()}
+                                </span>
+                            </div>
+                            <p className="card-text"><small className="text-muted">{alerta.fecha}</small></p>
+                            <p className="card-text">
+                                {alerta.estado === "excesivo" && "Exceso de consumo detectado."}
+                                {alerta.estado === "moderado" && "Consumo moderado, revisar uso."}
+                            </p>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
     );
 };
 

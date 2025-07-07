@@ -43,6 +43,7 @@ body {
 h2 {
   margin-bottom: 30px;
 }
+
 .sidebar h2 {
   font-size: 1.5rem;
   font-weight: bold;
@@ -142,13 +143,26 @@ h2 {
 }
 
 .card {
-  border-radius: 15px !important;
-  background: #f9f9f9;
-  transition: 0.3s;
+  border-radius: 10px;
+  border: none;
+  background-color: #ffffff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s ease;
 }
 
 .card:hover {
-  box-shadow: 0px 3px 10px rgba(0,0,0,0.2);
+  box-shadow: 0px 3px 10px rgba(0, 0, 0, 0.2);
+  transform: scale(1.02);
+}
+
+.card-title {
+  font-size: 16px;
+  color: #555555;
+}
+
+.card-body h5 {
+  font-size: 22px;
+  color: #000000;
 }
 
 .btn-primary:hover {
@@ -186,16 +200,35 @@ button:hover {
   background-color: #f1f1f1;
 }
 
-.table td, .table th {
+.table td,
+.table th {
   text-align: center;
   vertical-align: middle;
+}
+
+.table-primary {
+  background-color: #d7eaff;
+}
+
+.table-bordered th, .table-bordered td {
+  border: 1px solid #dee2e6;
 }
 
 .barChart {
   margin-bottom: 40px;
 }
 
-.row{
+.row {
   justify-content: center;
   gap: 20px;
+}
+
+.btn-outline-primary {
+  transition: all 0.3s ease-in-out;
+}
+
+.btn-outline-primary:hover {
+  background-color: #0056b3;
+  color: white;
+  border-color: #0056b3;
 }
