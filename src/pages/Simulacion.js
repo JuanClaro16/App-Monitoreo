@@ -141,7 +141,7 @@ const Simulacion = () => {
         )}
         {totalSimulado > valorFactura && (
           <div className="alert alert-danger" role="alert">
-            El consumo simulado mensual supera el valor de la factura. <strong>Estás consumiendo más energía de la que crees.</strong>
+            El consumo simulado proyectado, supera el valor actual de tu factura, por lo tanto este mes <strong>estás consumiendo más energía.</strong>
           </div>
         )}
         {Math.abs(totalSimulado - valorFactura) <= 3 && (
