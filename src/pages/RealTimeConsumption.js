@@ -90,7 +90,6 @@ const RealTimeConsumption = () => {
                 Ver historial completo
               </Button>
             </div>
-            <p className="text-muted">Este mes llevas acumulado 132.4 kWh.</p>
             <MiniGraficaHistorial />
           </Card.Body>
         </Card>
